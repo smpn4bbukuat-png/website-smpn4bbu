@@ -1,0 +1,6 @@
+{
+  "name": "eOSIS — Pemilihan Ketua & Wakil Ketua OSIS",
+  "description": "Aplikasi web pemilihan umum Ketua dan Wakil Ketua OSIS berbasis Vue.js 3, Bootstrap 5, dan Supabase dengan jaminan kerahasiaan suara dan RLS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
