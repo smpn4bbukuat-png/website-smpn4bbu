@@ -64,7 +64,7 @@ onMounted(loadResults);
               Hasil dihitung secara agregat. Sistem memisahkan identitas siswa dari pilihan kandidat.
             </div>
           </div>
-          <div class="mt-2">
+          <div class="mt-2 d-flex flex-wrap gap-2">
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm"
@@ -75,6 +75,10 @@ onMounted(loadResults);
               <i v-else class="bi bi-arrow-clockwise" aria-hidden="true"></i>
               <span>Perbarui Hasil</span>
             </button>
+            <router-link to="/admin/rekapitulasi" class="btn btn-primary btn-sm">
+              <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
+              <span>Unduh Rekapitulasi</span>
+            </router-link>
           </div>
         </div>
       </div>

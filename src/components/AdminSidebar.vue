@@ -16,6 +16,7 @@ const navItems = [
   {to: '/admin/siswa', label: 'Siswa/User', icon: 'bi-people'},
   {to: '/admin/kandidat', label: 'Calon Kandidat', icon: 'bi-person-badge'},
   {to: '/admin/perolehan-suara', label: 'Perolehan Suara', icon: 'bi-bar-chart-line'},
+  {to: '/admin/rekapitulasi', label: 'Rekapitulasi Akhir', icon: 'bi-file-earmark-arrow-down'},
   {to: '/admin/pengaturan', label: 'Pengaturan', icon: 'bi-gear'},
 ];
 </script>

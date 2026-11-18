@@ -58,6 +58,12 @@ const routes: RouteRecordRaw[] = [
         meta: {requiresAuth: true, role: 'admin' as UserRole, title: 'Perolehan Suara'},
       },
       {
+        path: 'rekapitulasi',
+        name: 'AdminRekapitulasi',
+        component: () => import('@/views/admin/RekapitulasiView.vue'),
+        meta: {requiresAuth: true, role: 'admin' as UserRole, title: 'Rekapitulasi Akhir'},
+      },
+      {
         path: 'pengaturan',
         name: 'AdminPengaturan',
         component: () => import('@/views/admin/PengaturanView.vue'),
