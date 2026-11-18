@@ -203,4 +203,14 @@ export const eosisApi = {
       p_full_name: payload.full_name,
     });
   },
+
+  async resetElection(
+    token: string,
+    adminPassword: string
+  ): Promise<{deleted_votes: number; reset_students: number}> {
+    return await callRpc<{deleted_votes: number; reset_students: number}>('admin_reset_election', {
+      p_token: token,
+      p_admin_password: adminPassword,
+    });
+  },
 };

@@ -882,6 +882,59 @@ BEGIN
 END;
 $$;
 
+-- Reset Pemilihan (Menghapus seluruh suara, mereset status memilih siswa, memutar ballot salt)
+CREATE OR REPLACE FUNCTION public.admin_reset_election(
+  p_token TEXT,
+  p_admin_password TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_admin_id UUID;
+  v_password_hash TEXT;
+  v_deleted_votes INTEGER;
+  v_reset_students INTEGER;
+BEGIN
+  v_admin_id := public.assert_admin_session(p_token);
+
+  SELECT password_hash INTO v_password_hash
+  FROM public.eosis_admins
+  WHERE id = v_admin_id;
+
+  IF v_password_hash IS NULL OR v_password_hash <> crypt(COALESCE(p_admin_password, ''), v_password_hash) THEN
+    RAISE EXCEPTION 'Password admin tidak sesuai. Reset pemilihan dibatalkan.' USING ERRCODE = 'P0001';
+  END IF;
+
+  -- 1. Kosongkan kotak suara anonim
+  DELETE FROM public.eosis_votes;
+  GET DIAGNOSTICS v_deleted_votes = ROW_COUNT;
+
+  -- 2. Kembalikan status seluruh siswa menjadi belum memilih
+  UPDATE public.eosis_students
+  SET has_voted = FALSE,
+      voted_at = NULL,
+      updated_at = NOW()
+  WHERE has_voted = TRUE OR voted_at IS NOT NULL;
+  GET DIAGNOSTICS v_reset_students = ROW_COUNT;
+
+  -- 3. Akhiri seluruh sesi login siswa agar status segar saat masuk ulang
+  DELETE FROM public.eosis_student_sessions;
+
+  -- 4. Putar salt kotak suara untuk putaran pemilihan berikutnya
+  UPDATE public.eosis_internal_secrets
+  SET ballot_salt = encode(gen_random_bytes(32), 'hex')
+  WHERE id = 1;
+
+  RETURN jsonb_build_object(
+    'deleted_votes', v_deleted_votes,
+    'reset_students', v_reset_students
+  );
+END;
+$$;
+
 -- Berikan izin eksekusi RPC ke anon & authenticated
 GRANT EXECUTE ON FUNCTION public.get_school_settings() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_candidates_public() TO anon, authenticated;
@@ -905,6 +958,7 @@ GRANT EXECUTE ON FUNCTION public.admin_delete_candidate(TEXT, UUID) TO anon, aut
 GRANT EXECUTE ON FUNCTION public.admin_get_vote_results(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_update_settings(TEXT, TEXT, TEXT, TEXT, TEXT, BOOLEAN) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_update_credentials(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_reset_election(TEXT, TEXT) TO anon, authenticated;
 
 -- ============================================================================
 -- SUPABASE STORAGE: BUCKET & POLICY UNTUK LOGO SEKOLAH & FOTO KANDIDAT

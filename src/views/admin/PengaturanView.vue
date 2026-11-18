@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import {onMounted, ref} from 'vue';
-import {extractErrorMessage, uploadAssetToStorage} from '@/lib/supabase';
+import {computed, onMounted, ref} from 'vue';
+import ConfirmModal from '@/components/ConfirmModal.vue';
+import {extractErrorMessage, isSchemaMissingError, uploadAssetToStorage} from '@/lib/supabase';
 import {eosisApi} from '@/services/eosisApi';
 import {authStore} from '@/stores/authStore';
 import {DEFAULT_SCHOOL_LOGO, settingsStore} from '@/stores/settingsStore';
@@ -22,6 +23,45 @@ const currentPassword = ref('');
 const newPassword = ref('');
 const confirmNewPassword = ref('');
 const savingCreds = ref(false);
+
+// Reset Election Modal & State
+const showResetModal = ref(false);
+const resetConfirmText = ref('');
+const resetAdminPassword = ref('');
+const resettingElection = ref(false);
+const resetRpcMissing = ref(false);
+
+const canConfirmReset = computed(
+  () => resetConfirmText.value.trim().toUpperCase() === 'RESET' && resetAdminPassword.value.length > 0
+);
+
+const RESET_RPC_SQL = `CREATE OR REPLACE FUNCTION public.admin_reset_election(p_token TEXT, p_admin_password TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_admin_id UUID;
+  v_password_hash TEXT;
+  v_deleted_votes INTEGER;
+  v_reset_students INTEGER;
+BEGIN
+  v_admin_id := public.assert_admin_session(p_token);
+  SELECT password_hash INTO v_password_hash FROM public.eosis_admins WHERE id = v_admin_id;
+  IF v_password_hash IS NULL OR v_password_hash <> crypt(COALESCE(p_admin_password, ''), v_password_hash) THEN
+    RAISE EXCEPTION 'Password admin tidak sesuai. Reset pemilihan dibatalkan.' USING ERRCODE = 'P0001';
+  END IF;
+  DELETE FROM public.eosis_votes;
+  GET DIAGNOSTICS v_deleted_votes = ROW_COUNT;
+  UPDATE public.eosis_students SET has_voted = FALSE, voted_at = NULL, updated_at = NOW() WHERE has_voted = TRUE OR voted_at IS NOT NULL;
+  GET DIAGNOSTICS v_reset_students = ROW_COUNT;
+  DELETE FROM public.eosis_student_sessions;
+  UPDATE public.eosis_internal_secrets SET ballot_salt = encode(gen_random_bytes(32), 'hex') WHERE id = 1;
+  RETURN jsonb_build_object('deleted_votes', v_deleted_votes, 'reset_students', v_reset_students);
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.admin_reset_election(TEXT, TEXT) TO anon, authenticated;`;
 
 function syncFromStores(): void {
   schoolName.value = settingsStore.state.settings.school_name;
@@ -113,6 +153,56 @@ async function handleUpdateCredentials(): Promise<void> {
     showToast(extractErrorMessage(error, 'Gagal memperbarui akun admin.'), 'danger');
   } finally {
     savingCreds.value = false;
+  }
+}
+
+function openResetModal(): void {
+  resetConfirmText.value = '';
+  resetAdminPassword.value = '';
+  showResetModal.value = true;
+}
+
+async function handleConfirmReset(): Promise<void> {
+  if (!authStore.state.token) return;
+  if (!canConfirmReset.value) {
+    showToast('Ketik RESET dan masukkan password admin untuk melanjutkan.', 'warning');
+    return;
+  }
+
+  resettingElection.value = true;
+  try {
+    const res = await eosisApi.resetElection(authStore.state.token, resetAdminPassword.value);
+    showResetModal.value = false;
+    resetRpcMissing.value = false;
+    resetConfirmText.value = '';
+    resetAdminPassword.value = '';
+    showToast(
+      `Pemilihan berhasil direset (${res.deleted_votes} suara dihapus, ${res.reset_students} status siswa dikembalikan ke Belum Memilih).`,
+      'success',
+      'Reset Pemilihan Berhasil'
+    );
+  } catch (error) {
+    if (isSchemaMissingError(error)) {
+      resetRpcMissing.value = true;
+      showResetModal.value = false;
+      showToast(
+        'Fungsi RPC admin_reset_election belum tersedia di Supabase. Jalankan SQL pembaruan pada panel Reset Pemilihan.',
+        'warning'
+      );
+    } else {
+      showToast(extractErrorMessage(error, 'Gagal mereset pemilihan.'), 'danger');
+    }
+  } finally {
+    resettingElection.value = false;
+  }
+}
+
+async function copyResetSql(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(RESET_RPC_SQL);
+    showToast('SQL fungsi admin_reset_election berhasil disalin.', 'success');
+  } catch {
+    showToast('Gagal menyalin SQL otomatis. Silakan salin dari file supabase/schema.sql.', 'warning');
   }
 }
 
@@ -306,5 +396,107 @@ onMounted(async () => {
         </div>
       </form>
     </div>
+
+    <!-- Reset Election Section -->
+    <div class="col-12">
+      <div class="eosis-card border-danger-subtle">
+        <div class="eosis-card-header d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+          <div>
+            <h2 class="h6 fw-bold text-danger mb-0">Reset Pemilihan</h2>
+            <div class="text-muted small">
+              Mulai ulang seluruh proses penghitungan suara untuk simulasi atau periode pemilihan baru.
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-danger btn-sm align-self-start align-self-md-auto"
+            @click="openResetModal"
+          >
+            <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+            <span>Reset Pemilihan</span>
+          </button>
+        </div>
+
+        <div class="eosis-card-body">
+          <div class="row g-3 small text-secondary">
+            <div class="col-md-6">
+              <div class="fw-semibold text-dark mb-1">Data yang akan direset:</div>
+              <ul class="mb-0 ps-3">
+                <li>Seluruh surat suara pada kotak suara elektronik dihapus permanen.</li>
+                <li>Status memilih semua siswa dikembalikan menjadi <strong>Belum Memilih</strong>.</li>
+                <li>Seluruh sesi login siswa yang sedang aktif akan diakhiri.</li>
+              </ul>
+            </div>
+            <div class="col-md-6">
+              <div class="fw-semibold text-dark mb-1">Data yang tetap aman:</div>
+              <ul class="mb-0 ps-3">
+                <li>Data kelas, daftar siswa (NISN &amp; tanggal lahir), dan calon kandidat tetap tersimpan.</li>
+                <li>Identitas sekolah, logo sekolah, periode, dan akun admin tidak berubah.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div v-if="resetRpcMissing" class="alert alert-warning mt-3 mb-0 small">
+            <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2">
+              <span>
+                Fungsi <code>admin_reset_election</code> belum terpasang di Supabase Anda. Jalankan
+                script SQL berikut di Supabase SQL Editor lalu coba lagi.
+              </span>
+              <button type="button" class="btn btn-outline-dark btn-sm flex-shrink-0" @click="copyResetSql">
+                <i class="bi bi-clipboard-check" aria-hidden="true"></i>
+                <span>Salin SQL Reset</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reset Election Confirmation Modal -->
+    <ConfirmModal
+      :show="showResetModal"
+      title="Konfirmasi Reset Pemilihan"
+      confirm-label="Ya, Reset Seluruh Suara"
+      cancel-label="Batal"
+      confirm-variant="danger"
+      :loading="resettingElection"
+      @confirm="handleConfirmReset"
+      @cancel="showResetModal = false"
+    >
+      <div class="alert alert-danger py-2 px-3 small mb-3">
+        <i class="bi bi-exclamation-octagon-fill me-1" aria-hidden="true"></i>
+        Tindakan ini akan menghapus seluruh perolehan suara secara permanen dan mengembalikan status
+        seluruh siswa menjadi <strong>Belum Memilih</strong>. Pastikan Anda sudah mengunduh
+        Rekapitulasi Akhir apabila diperlukan.
+      </div>
+
+      <div class="mb-3">
+        <label for="resetConfirmInput" class="form-label fw-semibold small">
+          Ketik <code>RESET</code> untuk konfirmasi
+        </label>
+        <input
+          id="resetConfirmInput"
+          v-model="resetConfirmText"
+          type="text"
+          class="form-control font-mono-num"
+          placeholder="Ketik RESET"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="mb-0">
+        <label for="resetAdminPasswordInput" class="form-label fw-semibold small">
+          Password Admin Saat Ini <span class="text-danger">*</span>
+        </label>
+        <input
+          id="resetAdminPasswordInput"
+          v-model="resetAdminPassword"
+          type="password"
+          class="form-control"
+          placeholder="Masukkan password admin untuk verifikasi"
+          autocomplete="current-password"
+        />
+      </div>
+    </ConfirmModal>
   </div>
 </template>
