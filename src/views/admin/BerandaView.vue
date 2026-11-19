@@ -126,6 +126,22 @@ onMounted(loadStats);
             </button>
           </div>
         </div>
+
+        <!-- Identitas & Motto SMP Negeri 4 Blambangan Umpu -->
+        <div class="beranda-slogan-strip" aria-label="SMP Negeri 4 Blambangan Umpu KUAT">
+          <div class="beranda-slogan-school">
+            SMP NEGERI 4 BLAMBANGAN UMPU
+          </div>
+          <div class="beranda-slogan-expression">
+            <span class="beranda-slogan-kuat">“KUAT”</span>
+            <span class="beranda-slogan-motto">
+              (<span class="beranda-slogan-initial">K</span>reatif
+              <span class="beranda-slogan-initial ms-1">U</span>nggul
+              <span class="beranda-slogan-initial ms-1">A</span>ktif
+              <span class="beranda-slogan-initial ms-1">T</span>aqwa)
+            </span>
+          </div>
+        </div>
       </div>
     </section>
 

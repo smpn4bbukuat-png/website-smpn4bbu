@@ -433,6 +433,65 @@ body {
   border-color: rgba(255, 255, 255, 0.55);
 }
 
+.beranda-slogan-strip {
+  margin-top: 1.35rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+}
+
+.beranda-slogan-school {
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #e0f2fe;
+}
+
+.beranda-slogan-expression {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 0.85rem;
+}
+
+.beranda-slogan-kuat {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 700;
+  font-size: 1.45rem;
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+  background: linear-gradient(90deg, #fef3c7 0%, #fde68a 45%, #fcd34d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.beranda-slogan-motto {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 1.08rem;
+  line-height: 1.35;
+  color: #ffffff;
+  letter-spacing: 0.01em;
+}
+
+.beranda-slogan-initial {
+  color: #fde68a;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.beranda-slogan-sep {
+  color: rgba(254, 243, 199, 0.65);
+  margin: 0 0.35rem;
+  font-style: normal;
+}
+
 .kpi-card {
   background-color: var(--eosis-surface);
   border: 1px solid var(--eosis-border);
