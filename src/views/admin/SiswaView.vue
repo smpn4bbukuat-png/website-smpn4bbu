@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from 'vue';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
 import ConfirmModal from '@/components/ConfirmModal.vue';
+import StudentImportModal from '@/components/StudentImportModal.vue';
 import {extractErrorMessage} from '@/lib/supabase';
 import {eosisApi} from '@/services/eosisApi';
 import {authStore} from '@/stores/authStore';
+import {settingsStore} from '@/stores/settingsStore';
 import {showToast} from '@/stores/toastStore';
 import type {ClassItem, StudentUser} from '@/types/eosis';
+import {
+  downloadStudentTemplateXlsx,
+  downloadUsersPdf,
+  exportStudentsCsv,
+  exportStudentsXlsx,
+} from '@/utils/studentTransfer';
 
 const students = ref<StudentUser[]>([]);
 const classes = ref<ClassItem[]>([]);
@@ -29,6 +37,11 @@ const formClassId = ref('');
 const showDeleteModal = ref(false);
 const deleting = ref(false);
 const deletingStudent = ref<StudentUser | null>(null);
+
+// Import & Download menu state
+const showImportModal = ref(false);
+const showExportMenu = ref(false);
+const exportDropdownRef = ref<HTMLElement | null>(null);
 
 const filteredStudents = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
@@ -142,15 +155,90 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
-onMounted(loadData);
+const currentScopeLabel = computed(() => {
+  const parts: string[] = [];
+  if (filterClassId.value) {
+    const cls = classes.value.find((c) => c.id === filterClassId.value);
+    if (cls) parts.push(cls.name);
+  } else {
+    parts.push('Semua Kelas');
+  }
+  if (filterStatus.value === 'voted') parts.push('Sudah Memilih');
+  if (filterStatus.value === 'pending') parts.push('Belum Memilih');
+  return parts.join(' - ');
+});
+
+function handleDownloadUsersPdf(): void {
+  showExportMenu.value = false;
+  if (filteredStudents.value.length === 0) {
+    showToast('Tidak ada data user siswa untuk diunduh.', 'warning');
+    return;
+  }
+  const filename = downloadUsersPdf(
+    filteredStudents.value,
+    settingsStore.state.settings,
+    currentScopeLabel.value
+  );
+  showToast(`Daftar user siswa "${filename}" berhasil diunduh.`, 'success');
+}
+
+function handleExportExcel(): void {
+  showExportMenu.value = false;
+  if (filteredStudents.value.length === 0) {
+    showToast('Tidak ada data siswa untuk diekspor.', 'warning');
+    return;
+  }
+  const filename = exportStudentsXlsx(
+    filteredStudents.value,
+    settingsStore.state.settings.school_name,
+    currentScopeLabel.value
+  );
+  showToast(`Data siswa diekspor ke "${filename}".`, 'success');
+}
+
+function handleExportCsv(): void {
+  showExportMenu.value = false;
+  if (filteredStudents.value.length === 0) {
+    showToast('Tidak ada data siswa untuk diekspor.', 'warning');
+    return;
+  }
+  const filename = exportStudentsCsv(
+    filteredStudents.value,
+    settingsStore.state.settings.school_name,
+    currentScopeLabel.value
+  );
+  showToast(`Data siswa diekspor ke "${filename}".`, 'success');
+}
+
+function handleDownloadTemplate(): void {
+  showExportMenu.value = false;
+  const filename = downloadStudentTemplateXlsx(classes.value);
+  showToast(`Template "${filename}" berhasil diunduh.`, 'success');
+}
+
+function handleDocumentClick(event: MouseEvent): void {
+  if (!showExportMenu.value || !exportDropdownRef.value) return;
+  if (!exportDropdownRef.value.contains(event.target as Node)) {
+    showExportMenu.value = false;
+  }
+}
+
+onMounted(() => {
+  loadData();
+  document.addEventListener('click', handleDocumentClick);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick);
+});
 </script>
 
 <template>
   <div>
     <!-- Filter & Action Toolbar -->
     <div class="eosis-card p-3 mb-4">
-      <div class="row g-2 align-items-center">
-        <div class="col-lg-4">
+      <div class="row g-2 align-items-center mb-3">
+        <div class="col-lg-5">
           <div class="input-group">
             <span class="input-group-text bg-white text-muted">
               <i class="bi bi-search" aria-hidden="true"></i>
@@ -164,7 +252,7 @@ onMounted(loadData);
             />
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <select v-model="filterClassId" class="form-select" aria-label="Filter kelas">
             <option value="">Semua Kelas</option>
             <option v-for="cls in classes" :key="cls.id" :value="cls.id">
@@ -179,8 +267,61 @@ onMounted(loadData);
             <option value="pending">Belum Memilih</option>
           </select>
         </div>
-        <div class="col-lg-2 text-lg-end">
-          <button type="button" class="btn btn-primary w-100" @click="openCreateModal">
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 pt-2 border-top">
+        <div class="small text-muted">
+          Menampilkan <strong class="font-mono-num text-dark">{{ filteredStudents.length }}</strong>
+          dari <strong class="font-mono-num text-dark">{{ students.length }}</strong> siswa terdaftar
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <!-- Download User & Export Dropdown -->
+          <div ref="exportDropdownRef" class="position-relative">
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm"
+              :aria-expanded="showExportMenu"
+              @click.stop="showExportMenu = !showExportMenu"
+            >
+              <i class="bi bi-download" aria-hidden="true"></i>
+              <span>Download User &amp; Export</span>
+              <i class="bi bi-chevron-down small" aria-hidden="true"></i>
+            </button>
+
+            <div
+              v-if="showExportMenu"
+              class="dropdown-menu dropdown-menu-end show shadow-sm mt-1"
+              style="min-width: 245px; right: 0; left: auto"
+            >
+              <button type="button" class="dropdown-item d-flex align-items-center gap-2 py-2" @click="handleDownloadUsersPdf">
+                <i class="bi bi-file-earmark-pdf text-danger" aria-hidden="true"></i>
+                <span>Download Daftar User (PDF)</span>
+              </button>
+              <button type="button" class="dropdown-item d-flex align-items-center gap-2 py-2" @click="handleExportExcel">
+                <i class="bi bi-file-earmark-excel text-success" aria-hidden="true"></i>
+                <span>Export Data Siswa (.xlsx)</span>
+              </button>
+              <button type="button" class="dropdown-item d-flex align-items-center gap-2 py-2" @click="handleExportCsv">
+                <i class="bi bi-filetype-csv text-primary" aria-hidden="true"></i>
+                <span>Export Data Siswa (.csv)</span>
+              </button>
+              <div class="dropdown-divider"></div>
+              <button type="button" class="dropdown-item d-flex align-items-center gap-2 py-2" @click="handleDownloadTemplate">
+                <i class="bi bi-file-earmark-arrow-down text-secondary" aria-hidden="true"></i>
+                <span>Unduh Template Import (.xlsx)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bulk Import Button -->
+          <button type="button" class="btn btn-outline-primary btn-sm" @click="showImportModal = true">
+            <i class="bi bi-upload" aria-hidden="true"></i>
+            <span>Import Siswa</span>
+          </button>
+
+          <!-- Add Single Student Button -->
+          <button type="button" class="btn btn-primary btn-sm" @click="openCreateModal">
             <i class="bi bi-plus-lg" aria-hidden="true"></i>
             <span>Tambah Siswa</span>
           </button>
@@ -365,5 +506,14 @@ onMounted(loadData);
         <span class="font-mono-num">{{ deletingStudent?.nisn }}</span>)?
       </p>
     </ConfirmModal>
+
+    <!-- Bulk Import Students Modal -->
+    <StudentImportModal
+      :show="showImportModal"
+      :classes="classes"
+      :students="students"
+      @close="showImportModal = false"
+      @imported="loadData"
+    />
   </div>
 </template>
